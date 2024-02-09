@@ -21,7 +21,7 @@ def generate_new_line(base64_image):
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "Describe this image"},
+                {"type": "text", "text": "What's in this image?"},
                 {
                     "type": "image_url",
                     "image_url": f"data:image/jpeg;base64,{base64_image}",
@@ -58,11 +58,11 @@ def prompt_gptv(script, frame):
     return response_text
 
 
-def play_audio(text, audio_files):
+def play_audio(text, audio_files, sound):
 
     audio = generate(text, voice=os.environ.get("ELEVENLABS_VOICE_ID"))
 
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    current_time = datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
 
     dir_path = "narration"
     os.makedirs(dir_path, exist_ok=True)
@@ -73,23 +73,22 @@ def play_audio(text, audio_files):
     with open(file_path, "wb") as f:
         f.write(audio)
     
-    play(audio)
+    if sound:
+        play(audio)
+
     timed_audio = AudioSegment.from_file(file_path)
     audio_len = len(timed_audio) / 1000.0
     return audio_len, audio_files
 
 def concatenate_with_silence(file_paths, silence_durations):
-    # Create an empty AudioSegment object
     combined = AudioSegment.silent(duration=0)
 
     for file_path, silence_duration in zip(file_paths, silence_durations):
         # Load the audio file
-        print(f'file path: {file_path}')
-        audio = AudioSegment.from_wav(file_path)
+        audio = AudioSegment.from_file(file_path)
 
-        # Add the audio and then the silence to the combined audio
-        combined += audio
         combined += AudioSegment.silent(duration=silence_duration * 1000)  # duration in milliseconds
+        combined += audio
 
     return combined
 
@@ -104,16 +103,9 @@ def clear_folder(folder_path):
             shutil.rmtree(file_path)  # Remove the directory and all its contents
 
 def add_audio_to_video(video_path, audio_path, output_path):
-    # Load the video clip
     video_clip = VideoFileClip(video_path)
-
-    # Load the audio file
     audio_clip = AudioFileClip(audio_path)
-
-    # Set the audio of the video clip as the audio file
     final_clip = video_clip.set_audio(audio_clip)
-
-    # Write the result to a file
     final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac")
 
 def main():
@@ -121,42 +113,39 @@ def main():
 
     video_path = 'movie.mov'
     output_folder = 'frame_screenshots'
-    timestamps = [3, 28, 46]
+    timestamps = [0.2, 28, 45, 67, 85]
 
     clear_folder(output_folder)
     get_frames(video_path, timestamps, output_folder)
 
     script = []
-    for filename in os.listdir(output_folder):
+    for i in range(len(timestamps)):
+        filename = "frame_" + str(i) + ".jpg"
+        print(f'Narrating {filename}...')
         if filename.endswith('.jpg'):
             frame = os.path.join(output_folder, filename)
 
             description = prompt_gptv(script, frame)
             script.append({"role": "assistant", "content": description})
-
-            # Selena's TODOs
-            # TODO line up audio with visual
-            # TODO watch end of films
     
     timestamps.insert(0, 0)
     i = 0
     audio_len = 0
-    silence = [timestamps[1]] # first audio
+    silence = [] # first audio
     audio_files = []
-    print("START")
     for text in script:
     
         sleep_in_s = timestamps[i+1] - timestamps[i] - audio_len
         silence.append(sleep_in_s)
-        print(f'sleep len: {sleep_in_s}')
-        print(f'text: {text}')
 
-        if sleep_in_s > 0:
-            time.sleep(timestamps[i+1] - timestamps[i] - audio_len) # align audio with video
-        else:
-            time.sleep(50)
+        print(f'\naudio len: {audio_len}, sleep: {sleep_in_s:.2f}')
+        to_print_content = text['content']
+        print(f'\n{to_print_content}')
+
+        if sleep_in_s <= 0:
             print("\nError: audio overlap\n")
-        audio_len, audio_files = play_audio(text['content'], audio_files)
+
+        audio_len, audio_files = play_audio(text['content'], audio_files, sound=False)
         i += 1
 
     # combine audio files
@@ -164,7 +153,6 @@ def main():
     final_audio.export("final_audio.wav", format="wav")
 
     # add audio to video
-    video_path = 'movie.mov'
     audio_path = 'final_audio.wav'
     movie_with_narration = 'narrated_movie.mp4'
     add_audio_to_video(video_path, audio_path, movie_with_narration)
