@@ -9,6 +9,7 @@ from pydub import AudioSegment, silence
 from playsound import playsound
 from datetime import datetime
 from elevenlabs import generate, play, set_api_key, voices
+from moviepy.editor import VideoFileClip, AudioFileClip
 from extract_frames import *
 
 def encode_image(image_path):
@@ -83,6 +84,7 @@ def concatenate_with_silence(file_paths, silence_durations):
 
     for file_path, silence_duration in zip(file_paths, silence_durations):
         # Load the audio file
+        print(f'file path: {file_path}')
         audio = AudioSegment.from_wav(file_path)
 
         # Add the audio and then the silence to the combined audio
@@ -100,6 +102,19 @@ def clear_folder(folder_path):
             os.unlink(file_path)  # Remove the file or link
         elif os.path.isdir(file_path):
             shutil.rmtree(file_path)  # Remove the directory and all its contents
+
+def add_audio_to_video(video_path, audio_path, output_path):
+    # Load the video clip
+    video_clip = VideoFileClip(video_path)
+
+    # Load the audio file
+    audio_clip = AudioFileClip(audio_path)
+
+    # Set the audio of the video clip as the audio file
+    final_clip = video_clip.set_audio(audio_clip)
+
+    # Write the result to a file
+    final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac")
 
 def main():
     set_api_key(os.environ.get("ELEVENLABS_API_KEY"))
@@ -140,13 +155,19 @@ def main():
             time.sleep(timestamps[i+1] - timestamps[i] - audio_len) # align audio with video
         else:
             time.sleep(50)
-            print("Error: audio overlap")
+            print("\nError: audio overlap\n")
         audio_len, audio_files = play_audio(text['content'], audio_files)
         i += 1
 
     # combine audio files
     final_audio = concatenate_with_silence(audio_files, silence)
     final_audio.export("final_audio.wav", format="wav")
+
+    # add audio to video
+    video_path = 'movie.mov'
+    audio_path = 'final_audio.wav'
+    movie_with_narration = 'narrated_movie.mp4'
+    add_audio_to_video(video_path, audio_path, movie_with_narration)
 
 if __name__ == "__main__":
     main()
